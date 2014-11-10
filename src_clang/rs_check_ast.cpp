@@ -207,6 +207,7 @@ void RSCheckAST::ValidateVarDecl(clang::VarDecl *VD)
 
 bool RSCheckAST::Validate() 
 {
+  llvm::errs() << "[Gai]: Starting the renderscript AST validation.\n";
   clang::TranslationUnitDecl *TUDecl = C.getTranslationUnitDecl();
   for (clang::DeclContext::decl_iterator DI = TUDecl->decls_begin(), 
        DE = TUDecl->decls_end(); 
@@ -348,6 +349,11 @@ int main(int argc, char *argv[]) {
   // Parse the file to AST, registering our consumer as the AST consumer.
   ParseAST(TheCompInst.getPreprocessor(), &TheConsumer,
            TheCompInst.getASTContext());
+
+
+  // Renderscript AST checker
+  RSCheckAST rs_checker (TheCompInst.getASTContext(), 19, false);
+  rs_checker.Validate();
 
   // At this point the rewriter's buffer should be full with the rewritten
   // file contents.
