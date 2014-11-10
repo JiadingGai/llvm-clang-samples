@@ -106,7 +106,7 @@ all: make_builddir \
 	$(BUILDDIR)/access_debug_metadata \
 	$(BUILDDIR)/clang-check \
 	$(BUILDDIR)/rewritersample \
-	$(BUILDDIR)/rs_check_ast.cpp \
+	$(BUILDDIR)/rs_check_ast \
 	$(BUILDDIR)/matchers_replacements \
 	$(BUILDDIR)/matchers_rewriter \
 	$(BUILDDIR)/tooling_sample \
@@ -152,6 +152,10 @@ $(BUILDDIR)/clang-check: $(SRC_CLANG_DIR)/ClangCheck.cpp
 		$(CLANG_LIBS) $(LLVM_LDFLAGS) -o $@
 
 $(BUILDDIR)/rewritersample: $(SRC_CLANG_DIR)/rewritersample.cpp
+	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(CLANG_INCLUDES) $^ \
+		$(CLANG_LIBS) $(LLVM_LDFLAGS) -o $@
+
+$(BUILDDIR)/rs_check_ast: $(SRC_CLANG_DIR)/rs_check_ast.cpp
 	$(CXX) $(CXXFLAGS) $(LLVM_CXXFLAGS) $(CLANG_INCLUDES) $^ \
 		$(CLANG_LIBS) $(LLVM_LDFLAGS) -o $@
 
