@@ -106,6 +106,7 @@ all: make_builddir \
 	$(BUILDDIR)/access_debug_metadata \
 	$(BUILDDIR)/clang-check \
 	$(BUILDDIR)/rewritersample \
+	$(BUILDDIR)/rs_check_ast.cpp \
 	$(BUILDDIR)/matchers_replacements \
 	$(BUILDDIR)/matchers_rewriter \
 	$(BUILDDIR)/tooling_sample \
