@@ -55,6 +55,7 @@ public:
 
   bool VisitFunctionDecl(FunctionDecl *f) {
     // Only function definitions (with bodies), not declarations.
+    llvm::errs() << "[Gai] " <<  f->getNameInfo() << "\n";
     if (f->hasBody()) {
       Stmt *FuncBody = f->getBody();
 
