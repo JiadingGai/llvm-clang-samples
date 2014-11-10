@@ -12,8 +12,10 @@
 #include <string>
 #include <sstream>
 
-#include "clang/AST/ASTConsumer.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/ASTConsumer.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
@@ -22,12 +24,205 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/ParseAST.h"
+#include "clang/AST/StmtVisitor.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Rewrite/Frontend/Rewriters.h"
 #include "llvm/Support/Host.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
+
+ 
+class ASTContext;
+
+// Jiading Gai
+class RSCheckAST : public clang::StmtVisitor<RSCheckAST> {
+  private:
+    // [Gai] slang::RSContext *Context;
+    clang::ASTContext &C;
+    // [Gai] clang::SourceManager &mSM;
+    bool mValid;
+    unsigned int mTargetAPI;
+    bool mIsFilterscript;
+    bool mInKernel;
+
+    void WarnOnSetElementAt(clang::CallExpr*);
+
+  public:
+   // explicit RSCheckAST(RSContext &Con, unsigned int TargetAPI, 
+   //                     bool IsFilterscript)
+   //   : Context(Con),
+   //     C(Con->getASTContext()),
+   //     mSM(C.getSourceManager()),
+   //     mValid(true),
+   //     mTargetAPI(TargetAPI),
+   //     mIsFilterscript(IsFilterscript),
+   //     mInKernel(false) {
+   //     
+   // }
+
+    explicit RSCheckAST(clang::ASTContext &Con, unsigned int TargetAPI,
+                       bool IsFilterscript)
+      : C(Con),
+        mValid(true),
+        mTargetAPI(TargetAPI),
+        mIsFilterscript(IsFilterscript),
+        mInKernel(false) {
+    }
+
+    void VisitStmt(clang::Stmt *S);
+    void VisitCallExpr(clang::CallExpr *CE);
+    void VisitCastExpr(clang::CastExpr *CE);
+    void VisitExpr(clang::Expr *E);
+    void VisitDeclStmt(clang::DeclStmt *DS);
+    void ValidateFunctionDecl(clang::FunctionDecl *FD);
+    void ValidateVarDecl(clang::VarDecl *VD);
+    bool Validate();
+};
+
+void RSCheckAST::VisitStmt(clang::Stmt *S) {
+  for (clang::Stmt::child_iterator I = S->child_begin(), E = S->child_end();
+       I != E; ++I) {
+    if (clang::Stmt *Child = *I) {
+      Visit(Child);
+    }
+  }
+}
+
+void RSCheckAST::VisitCallExpr(clang::CallExpr *CE) {
+  for (clang::CallExpr::arg_iterator AI = CE->arg_begin(), AE = CE->arg_end();
+       AI != AE; ++AI) {
+    Visit(*AI);
+  }
+}
+
+void RSCheckAST::VisitCastExpr(clang::CastExpr *CE) {
+  if (CE->getCastKind() == clang::CK_BitCast) {
+    clang::QualType QT = CE->getType();
+    const clang::Type *T = QT.getTypePtr();
+    if (T->isVectorType()) {
+      if (llvm::isa<clang::ImplicitCastExpr>(CE)) {
+        llvm::errs() << "invalid implicit vector cast\n";
+      } else {
+        llvm::errs() << "invalid vector cast\n";
+      }
+      mValid = false; 
+    }
+  }
+  Visit(CE->getSubExpr());
+}
+
+void RSCheckAST::VisitExpr(clang::Expr *E) {
+  E->IgnoreImpCasts();
+  if (mIsFilterscript /*&&
+      !SlangRS::IsLocInRSHeaderFilt(E->getExprLoc(), mSM) &&
+      !RSExportType::ValidateType(Context, C, E->getType(), nullptr, E->getExprLoc(),
+                                  mTargetAPI, mIsFilterscript)*/) {
+    mValid = false;
+  } else {
+    VisitStmt(E);
+  }
+}
+
+void RSCheckAST::VisitDeclStmt(clang::DeclStmt *DS) {
+  //if (!SlangRS::IsLocInRSHeaderFilt(DS->getLocStart(), mSM)) {
+      for (clang::DeclStmt::decl_iterator I = DS->decl_begin(), 
+                                          E = DS->decl_end();
+           I != E;
+           ++I) {
+        if (clang::VarDecl *VD = llvm::dyn_cast<clang::VarDecl>(*I)) {
+          ValidateVarDecl(VD);
+        } else if (clang::FunctionDecl *FD = llvm::dyn_cast<clang::FunctionDecl>(*I)) {
+          ValidateFunctionDecl(FD);
+        }
+      }
+  //}
+}
+
+void RSCheckAST::ValidateFunctionDecl(clang::FunctionDecl *FD) 
+{
+  if (!FD) {
+    return;
+  }
+
+  if (mIsFilterscript) {
+    size_t numParams = FD->getNumParams();
+    clang::QualType resultType = FD->getReturnType().getCanonicalType();
+
+   // if (RSExportType::ValidateType(Context, C, resultType, FD,
+   //                                FD->getLocStart(), mTargetAPI,
+   //                                mIsFilterscript)) {
+   //   mValid = false;
+   // }
+
+    for (size_t i = 0; i < numParams; i++) {
+      clang::ParmVarDecl *PVD = FD->getParamDecl(i);
+      clang::QualType QT = PVD->getType().getCanonicalType();
+
+     // if (!RSExportType::ValidateType(Context, C, QT, PVD, PVD->getLocStart(),
+     //                                 mTargetAPI, mIsFilterscript)) {
+     //   mValid = false;
+     // }
+    }
+
+  }
+
+  bool  saveKernel = mInKernel;
+  //mInKernel = RSExportForEach::isRSForEachFunc(mTargetAPI, Context, FD);
+
+  if (clang::Stmt *Body = FD->getBody()) {
+    Visit(Body);
+  }
+
+  mInKernel = saveKernel;
+}
+
+void RSCheckAST::ValidateVarDecl(clang::VarDecl *VD)
+{
+  if (!VD) {
+    return;
+  }
+
+  clang::QualType QT = VD->getType();
+  if (VD->getFormalLinkage() == clang::ExternalLinkage) {
+    llvm::StringRef TypeName;
+    const clang::Type *T = QT.getTypePtr();
+   // if (!RSExportType::NormalizeType(T, TypeName, Context, VD)) {
+   //   mValid = false;
+   // }
+  }
+
+  if (mInKernel && VD->isStaticLocal()) {
+    if (!QT.isConstQualified()) {
+      llvm::errs() << "Non-const static variables are not allowed in kernels.\n";
+      mValid = false;
+    }
+  }
+
+  /*if (!RSExportType::ValidateVarDecl(Context, VD, mTargetAPI, mIsFilterscript)) {
+    mValid = false;
+  } else */if (clang::Expr *Init = VD->getInit()) {
+    Visit(Init);
+  }
+}
+
+bool RSCheckAST::Validate() 
+{
+  clang::TranslationUnitDecl *TUDecl = C.getTranslationUnitDecl();
+  for (clang::DeclContext::decl_iterator DI = TUDecl->decls_begin(), 
+       DE = TUDecl->decls_end(); 
+       DI != DE;
+       DI++) {
+    //if (!SlangRS::IsLocInRSHeaderFile(DI->getLocStart(), mSM)) {
+        if (clang::VarDecl *VD = llvm::dyn_cast<clang::VarDecl>(*DI)) {
+          ValidateVarDecl(VD);
+        } else if (clang::FunctionDecl *FD = llvm::dyn_cast<clang::FunctionDecl>(*DI)) {
+          ValidateFunctionDecl(FD);
+        } else if (clang::Stmt *Body = (*DI)->getBody()) {
+          Visit(Body);
+        }
+    //}
+  }
+}
 
 // By implementing RecursiveASTVisitor, we can specify which AST nodes
 // we're interested in by overriding relevant methods.
