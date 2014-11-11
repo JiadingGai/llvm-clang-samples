@@ -22,6 +22,7 @@
 #include "clang/Basic/TargetOptions.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/ASTConsumers.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/ParseAST.h"
 #include "clang/AST/StmtVisitor.h"
@@ -60,13 +61,7 @@ class RSCheckAST : public clang::StmtVisitor<RSCheckAST> {
    //     
    // }
 
-    explicit RSCheckAST(clang::ASTContext &Con, unsigned int TargetAPI,
-                       bool IsFilterscript)
-      : C(Con),
-        mValid(true),
-        mTargetAPI(TargetAPI),
-        mIsFilterscript(IsFilterscript),
-        mInKernel(false) {
+    explicit RSCheckAST(clang::ASTContext &Con, unsigned int TargetAPI, bool IsFilterscript) : C(Con), mValid(true), mTargetAPI(TargetAPI), mIsFilterscript(IsFilterscript), mInKernel(false) {
     }
 
     void VisitStmt(clang::Stmt *S);
@@ -74,14 +69,20 @@ class RSCheckAST : public clang::StmtVisitor<RSCheckAST> {
     void VisitCastExpr(clang::CastExpr *CE);
     void VisitExpr(clang::Expr *E);
     void VisitDeclStmt(clang::DeclStmt *DS);
+    void VisitCompoundStmt(clang::CompoundStmt *CS);
     void ValidateFunctionDecl(clang::FunctionDecl *FD);
     void ValidateVarDecl(clang::VarDecl *VD);
     bool Validate();
 };
 
+
+void RSCheckAST::VisitCompoundStmt(clang::CompoundStmt *CS) {
+  llvm::errs() << "[Gai - inside VisitCompundStmt]\n";
+
+}
+
 void RSCheckAST::VisitStmt(clang::Stmt *S) {
-  for (clang::Stmt::child_iterator I = S->child_begin(), E = S->child_end();
-       I != E; ++I) {
+  for (clang::Stmt::child_iterator I = S->child_begin(), E = S->child_end(); I != E; ++I) {
     if (clang::Stmt *Child = *I) {
       Visit(Child);
     }
@@ -89,8 +90,7 @@ void RSCheckAST::VisitStmt(clang::Stmt *S) {
 }
 
 void RSCheckAST::VisitCallExpr(clang::CallExpr *CE) {
-  for (clang::CallExpr::arg_iterator AI = CE->arg_begin(), AE = CE->arg_end();
-       AI != AE; ++AI) {
+  for (clang::CallExpr::arg_iterator AI = CE->arg_begin(), AE = CE->arg_end(); AI != AE; ++AI) {
     Visit(*AI);
   }
 }
@@ -113,10 +113,7 @@ void RSCheckAST::VisitCastExpr(clang::CastExpr *CE) {
 
 void RSCheckAST::VisitExpr(clang::Expr *E) {
   E->IgnoreImpCasts();
-  if (mIsFilterscript /*&&
-      !SlangRS::IsLocInRSHeaderFilt(E->getExprLoc(), mSM) &&
-      !RSExportType::ValidateType(Context, C, E->getType(), nullptr, E->getExprLoc(),
-                                  mTargetAPI, mIsFilterscript)*/) {
+  if (mIsFilterscript /*&& !SlangRS::IsLocInRSHeaderFilt(E->getExprLoc(), mSM) && !RSExportType::ValidateType(Context, C, E->getType(), nullptr, E->getExprLoc(), mTargetAPI, mIsFilterscript)*/) {
     mValid = false;
   } else {
     VisitStmt(E);
@@ -125,10 +122,7 @@ void RSCheckAST::VisitExpr(clang::Expr *E) {
 
 void RSCheckAST::VisitDeclStmt(clang::DeclStmt *DS) {
   //if (!SlangRS::IsLocInRSHeaderFilt(DS->getLocStart(), mSM)) {
-      for (clang::DeclStmt::decl_iterator I = DS->decl_begin(), 
-                                          E = DS->decl_end();
-           I != E;
-           ++I) {
+      for (clang::DeclStmt::decl_iterator I = DS->decl_begin(), E = DS->decl_end(); I != E; ++I) {
         if (clang::VarDecl *VD = llvm::dyn_cast<clang::VarDecl>(*I)) {
           ValidateVarDecl(VD);
         } else if (clang::FunctionDecl *FD = llvm::dyn_cast<clang::FunctionDecl>(*I)) {
@@ -209,20 +203,21 @@ bool RSCheckAST::Validate()
 {
   llvm::errs() << "[Gai]: Starting the renderscript AST validation.\n";
   clang::TranslationUnitDecl *TUDecl = C.getTranslationUnitDecl();
-  for (clang::DeclContext::decl_iterator DI = TUDecl->decls_begin(), 
-       DE = TUDecl->decls_end(); 
-       DI != DE;
-       DI++) {
+  for (clang::DeclContext::decl_iterator DI = TUDecl->decls_begin(), DE = TUDecl->decls_end(); DI != DE; DI++) {
     //if (!SlangRS::IsLocInRSHeaderFile(DI->getLocStart(), mSM)) {
+        DI->dump();
         if (clang::VarDecl *VD = llvm::dyn_cast<clang::VarDecl>(*DI)) {
           ValidateVarDecl(VD);
         } else if (clang::FunctionDecl *FD = llvm::dyn_cast<clang::FunctionDecl>(*DI)) {
           ValidateFunctionDecl(FD);
         } else if (clang::Stmt *Body = (*DI)->getBody()) {
           Visit(Body);
+        } else if (clang::TypeDecl *TD = llvm::dyn_cast<clang::TypeDecl>(*DI)) {
+          //llvm::errs() << "[Gai - TypeDecl] ";
         }
     //}
   }
+  llvm::errs() << "[Gai]: Ending the renderscript AST validation.\n";
 }
 
 // By implementing RecursiveASTVisitor, we can specify which AST nodes
@@ -237,13 +232,11 @@ public:
       IfStmt *IfStatement = cast<IfStmt>(s);
       Stmt *Then = IfStatement->getThen();
 
-      TheRewriter.InsertText(Then->getLocStart(), "// the 'if' part\n", true,
-                             true);
+      TheRewriter.InsertText(Then->getLocStart(), "// the 'if' part\n", true, true);
 
       Stmt *Else = IfStatement->getElse();
       if (Else)
-        TheRewriter.InsertText(Else->getLocStart(), "// the 'else' part\n",
-                               true, true);
+        TheRewriter.InsertText(Else->getLocStart(), "// the 'else' part\n", true, true);
     }
 
     return true;
@@ -265,8 +258,7 @@ public:
 
       // Add comment before
       std::stringstream SSBefore;
-      SSBefore << "// Begin function " << FuncName << " returning " << TypeStr
-               << "\n";
+      SSBefore << "// Begin function " << FuncName << " returning " << TypeStr << "\n";
       SourceLocation ST = f->getSourceRange().getBegin();
       TheRewriter.InsertText(ST, SSBefore.str(), true, true);
 
@@ -320,8 +312,7 @@ int main(int argc, char *argv[]) {
   // Initialize target info with the default triple for our platform.
   auto TO = std::make_shared<TargetOptions>();
   TO->Triple = llvm::sys::getDefaultTargetTriple();
-  TargetInfo *TI =
-      TargetInfo::CreateTargetInfo(TheCompInst.getDiagnostics(), TO);
+  TargetInfo *TI = TargetInfo::CreateTargetInfo(TheCompInst.getDiagnostics(), TO);
   TheCompInst.setTarget(TI);
 
   TheCompInst.createFileManager();
@@ -337,28 +328,30 @@ int main(int argc, char *argv[]) {
 
   // Set the main file handled by the source manager to the input file.
   const FileEntry *FileIn = FileMgr.getFile(argv[1]);
-  SourceMgr.setMainFileID(
-      SourceMgr.createFileID(FileIn, SourceLocation(), SrcMgr::C_User));
-  TheCompInst.getDiagnosticClient().BeginSourceFile(
-      TheCompInst.getLangOpts(), &TheCompInst.getPreprocessor());
+  SourceMgr.setMainFileID( SourceMgr.createFileID(FileIn, SourceLocation(), SrcMgr::C_User));
+  TheCompInst.getDiagnosticClient().BeginSourceFile( TheCompInst.getLangOpts(), &TheCompInst.getPreprocessor());
 
   // Create an AST consumer instance which is going to get called by
   // ParseAST.
   MyASTConsumer TheConsumer(TheRewriter);
 
   // Parse the file to AST, registering our consumer as the AST consumer.
-  ParseAST(TheCompInst.getPreprocessor(), &TheConsumer,
-           TheCompInst.getASTContext());
+  ParseAST(TheCompInst.getPreprocessor(), &TheConsumer, TheCompInst.getASTContext());
 
 
   // Renderscript AST checker
   RSCheckAST rs_checker (TheCompInst.getASTContext(), 19, false);
   rs_checker.Validate();
 
+  ASTConsumer *astc = clang::CreateASTPrinter(&llvm::outs(), "gai-ast-dump");
+  astc->HandleTranslationUnit(TheCompInst.getASTContext());
+  astc->PrintStats();
+
+
+
   // At this point the rewriter's buffer should be full with the rewritten
   // file contents.
-  const RewriteBuffer *RewriteBuf =
-      TheRewriter.getRewriteBufferFor(SourceMgr.getMainFileID());
+  const RewriteBuffer *RewriteBuf = TheRewriter.getRewriteBufferFor(SourceMgr.getMainFileID());
   llvm::outs() << std::string(RewriteBuf->begin(), RewriteBuf->end());
 
   return 0;
