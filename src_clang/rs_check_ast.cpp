@@ -172,6 +172,8 @@ void RSCheckAST::ValidateFunctionDecl(clang::FunctionDecl *FD)
 
 void RSCheckAST::ValidateVarDecl(clang::VarDecl *VD)
 {
+  llvm::errs() << "[Gai - ValidateVarDecl]: \n";
+
   if (!VD) {
     return;
   }
