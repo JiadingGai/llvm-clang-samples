@@ -1,11 +1,7 @@
 //------------------------------------------------------------------------------
-// Clang rewriter sample. Demonstrates:
+// SR-71 Renderscript AST checker sample. 
 //
-// * How to use RecursiveASTVisitor to find interesting AST nodes.
-// * How to use the Rewriter API to rewrite the source code.
-//
-// Eli Bendersky (eliben@gmail.com)
-// This code is in the public domain
+// Jiading Gai (jiading@multicorewareinc.com)
 //------------------------------------------------------------------------------
 #include <cstdio>
 #include <memory>
